@@ -41,8 +41,14 @@
 #define PERF_EXEC_TIME "\tcheck_execution_time="
 #define PERF_LATENCY "\tcheck_latency="
 
+#define HOST_CHECKS_ENABLED "\tactive_host_checks_enabled="
+#define SERVICE_CHECKS_ENABLED "\tactive_service_checks_enabled="
+
 static char *retentionfile = NULL;
 static char *statusfile = NULL;
+
+bool service_checks_enabled = false;
+bool host_checks_enabled = false;
 
 static const char *config_keys[] =
 {
@@ -56,19 +62,19 @@ static int config_keys_num = STATIC_ARRAY_SIZE (config_keys);
 nagios_stats init_nagios_stats(void) {
   nagios_stats s;
 
-  s.counter=0;
-  s.within_1_min=0;
-  s.within_5_min=0;
-  s.within_15_min=0;
-  s.within_60_min=0;
+  s.counter = 0;
+  s.within_1_min = 0;
+  s.within_5_min = 0;
+  s.within_15_min = 0;
+  s.within_60_min = 0;
 
-  s.exec_time_min=1000.0;
-  s.exec_time_max=0.0;
-  s.exec_time_sum=0.0;
+  s.exec_time_min = 1000.0;
+  s.exec_time_max = 0.0;
+  s.exec_time_sum = 0.0;
 
-  s.latency_time_min=1000.0;
-  s.latency_time_max=0.0;
-  s.latency_time_sum=0.0;
+  s.latency_time_min = 1000.0;
+  s.latency_time_max = 0.0;
+  s.latency_time_sum = 0.0;
 
   return s;
 }
@@ -102,7 +108,6 @@ void submit_nagios_stats(nagios_stats s, const char *label) {
   value_list_t latency_vl = VALUE_LIST_INIT;
 
   char tmp_label[BUFFSIZE];
-
 
   /* Time ranges : group all together */
 #ifdef __DEBUG__  
@@ -269,6 +274,34 @@ static int read_performance (void)  {
     if(strcmp(line, "}\n") == 0)
       mode=0;
 
+    if (strncmp(line, HOST_CHECKS_ENABLED, 28) == 0) {
+      if (atoi(&line[28]) == 1) {
+        host_checks_enabled = true;
+#ifdef __DEBUG__
+        WARNING("host checks now submitting data");
+#endif
+     } else {
+        host_checks_enabled = false;
+#ifdef __DEBUG__
+        WARNING("host checks no more submitting data");
+#endif
+     }
+    }
+
+    if (strncmp(line, SERVICE_CHECKS_ENABLED, 31) == 0) {
+      if (atoi(&line[31]) == 1) {
+        service_checks_enabled = true;
+#ifdef __DEBUG__
+        WARNING("service checks now submitting data");
+#endif
+      } else {
+        service_checks_enabled = false;
+#ifdef __DEBUG__
+        WARNING("service checks no more submitting data");
+#endif
+      }
+    }
+
     /* Find the performance lines
 
       get the last check timestamp
@@ -379,9 +412,18 @@ static int read_performance (void)  {
   }
 
   fclose(fp);
-
-  submit_nagios_stats(host_perfs, "hosts");
-  submit_nagios_stats(service_perfs, "services");
+  if (host_checks_enabled == true) {
+    submit_nagios_stats(host_perfs, "hosts");
+#ifdef __DEBUG__
+    WARNING("pushing host perfs");
+#endif
+  }
+  if (service_checks_enabled == true) {
+    submit_nagios_stats(service_perfs, "services");
+#ifdef __DEBUG__
+    WARNING("pushing service perfs");
+#endif
+ }
 
   return 0;
 }
