@@ -31,20 +31,18 @@
 #include "nagiostats.h"
 
 #define BUFFSIZE 4096
-#define STATUS_HOST_START "host {\n"
-#define STATUS_SERVICE_START "service {\n"
-#define STATUS_LINE "current_state="
+#define STATUS_LINE "\tcurrent_state="
 
 #define PERF_HOST_START "hoststatus {\n"
 #define PERF_SERVICE_START "servicestatus {\n"
 #define PERF_LAST_CHECK "\tlast_check="
 #define PERF_EXEC_TIME "\tcheck_execution_time="
 #define PERF_LATENCY "\tcheck_latency="
+#define PERF_HOSTNAME "\thost_name="
 
 #define HOST_CHECKS_ENABLED "\tactive_host_checks_enabled="
 #define SERVICE_CHECKS_ENABLED "\tactive_service_checks_enabled="
 
-static char *retentionfile = NULL;
 static char *statusfile = NULL;
 
 bool service_checks_enabled = false;
@@ -52,7 +50,6 @@ bool host_checks_enabled = false;
 
 static const char *config_keys[] =
 {
-  "RetentionFile",
   "StatusFile"
 };
 
@@ -188,8 +185,10 @@ void submit_nagios_stats(nagios_stats s, const char *label) {
  * This function is called in regular intervalls to collect the data.
  */
 static int nagiostats_read (void) {
-  if (retentionfile != NULL) { read_status(); }
-  if (statusfile != NULL) { read_performance(); }
+  if (statusfile != NULL) { 
+    read_status();
+    read_performance();
+  }
 } /* static int nagiostats_read (void) */
 
 /* Read service status */
@@ -201,20 +200,20 @@ static int read_status (void) {
   int services[4]={0};
   int state_value;
 
-  fp=fopen(retentionfile,"r");
+  fp=fopen(statusfile,"r");
   if (fp == NULL)
     return 1;
 
   while(fgets(line, sizeof(line), fp ) != NULL) {
-    if(strcmp(line, STATUS_HOST_START) == 0)
+    if(strcmp(line, PERF_HOST_START) == 0)
       mode=1;
-    if(strcmp(line, STATUS_SERVICE_START) == 0)
+    if(strcmp(line, PERF_SERVICE_START) == 0)
       mode=2;
     if(strcmp(line, "}\n") == 0)
       mode=0;
-    if(strlen(line) == 16)
-      if(strncmp(line, STATUS_LINE, 14) == 0) {
-        state_value=atoi(&line[14]);
+    if(strlen(line) == 17)
+      if(strncmp(line, STATUS_LINE, 15) == 0) {
+        state_value=atoi(&line[15]);
         switch(mode) {
           case 1:
             switch(state_value) {
@@ -251,20 +250,47 @@ static int read_status (void) {
 /* Read global nagios performance */
 static int read_performance (void)  {
   FILE *fp;
-  char line[BUFFSIZE];
+  char line[BUFFSIZE], hostname[BUFFSIZE];
   int mode=0;
   int i_value;
   double d_value;
-  int now, ago;
+  int reference_time, now, ago;
+  struct stat file_info;
 
   nagios_stats host_perfs = init_nagios_stats();
   nagios_stats service_perfs = init_nagios_stats();
 
+  /* find the last_check highest timestamp */
+  fp=fopen(statusfile,"r");
+  while(fgets(line, sizeof(line), fp ) != NULL) {
+    if(strncmp(line, PERF_LAST_CHECK, 12) == 0) {
+      if ((atoi(&line[12]) > reference_time)) {
+        reference_time=(atoi(&line[12]));
+      }
+    }
+  }
+  fclose(fp);
+
+#ifdef __DEBUG__
+  WARNING("Using %d as a reference time", reference_time);
+#endif
+
+  if(stat(statusfile,&file_info) == 0) {
+    now = time(NULL);
+    // file has not been updated for more than one minute, it's way too much !
+    if (now - file_info.st_mtime > 60) {
+      WARNING("Status file mtime timestamp is %d, when system time is %d. Too much delta, failing.", reference_time, now);
+    }
+  }
+  else
+  {
+    WARNING("could not get last modification date of status file");
+    return 1;
+  }
+
   fp=fopen(statusfile,"r");
   if (fp == NULL)
     return 1;
-
-  now = time(NULL);
 
   while(fgets(line, sizeof(line), fp ) != NULL) {
     if(strcmp(line, PERF_HOST_START) == 0)
@@ -273,6 +299,11 @@ static int read_performance (void)  {
       mode=2;
     if(strcmp(line, "}\n") == 0)
       mode=0;
+
+    if(strncmp(line, PERF_HOSTNAME, 11) == 0) {
+      strcpy(hostname, "                                 ");
+      strncpy(hostname, &line[11], strlen(&line[11])-2);
+    }
 
     if (strncmp(line, HOST_CHECKS_ENABLED, 28) == 0) {
       if (atoi(&line[28]) == 1) {
@@ -308,7 +339,7 @@ static int read_performance (void)  {
     */
     if(strncmp(line, PERF_LAST_CHECK, 12) == 0) {
       i_value=atoi(&line[12]);
-      ago = now - i_value;
+      ago = reference_time - i_value;
 
       switch(mode) {
         // host
@@ -429,13 +460,6 @@ static int read_performance (void)  {
 }
 
 static int nagiostats_config (const char *key, const char *value) {
-  if (strcasecmp (key, "RetentionFile") == 0) {
-    if (retentionfile != NULL) {
-      free (retentionfile);
-    }
-    retentionfile = strdup (value);
-  }
-
   if (strcasecmp (key, "StatusFile") == 0) {
     if (statusfile != NULL) {
       free (statusfile);
