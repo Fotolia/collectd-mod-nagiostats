@@ -24,9 +24,9 @@
 
 #endif /* ! HAVE_CONFIG */
 
-#include <collectd/collectd.h>
-#include <collectd/common.h>
-#include <collectd/plugin.h>
+#include <collectd.h>
+#include <common.h>
+#include <plugin.h>
 
 #include "nagiostats.h"
 
@@ -189,6 +189,7 @@ static int nagiostats_read (void) {
     read_status();
     read_performance();
   }
+  return 0;
 } /* static int nagiostats_read (void) */
 
 /* Read service status */
@@ -254,7 +255,7 @@ static int read_performance (void)  {
   int mode=0;
   int i_value;
   double d_value;
-  int reference_time, now, ago;
+  int reference_time=0, now, ago;
   struct stat file_info;
 
   nagios_stats host_perfs = init_nagios_stats();
