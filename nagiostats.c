@@ -263,6 +263,9 @@ static int read_performance (void)  {
 
   /* find the last_check highest timestamp */
   fp=fopen(statusfile,"r");
+  if (fp == NULL)
+    return 1;
+
   while(fgets(line, sizeof(line), fp ) != NULL) {
     if(strncmp(line, PERF_LAST_CHECK, 12) == 0) {
       if ((atoi(&line[12]) > reference_time)) {
