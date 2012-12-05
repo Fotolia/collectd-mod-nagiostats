@@ -185,11 +185,12 @@ void submit_nagios_stats(nagios_stats s, const char *label) {
  * This function is called in regular intervalls to collect the data.
  */
 static int nagiostats_read (void) {
-  if (statusfile != NULL) { 
-    read_status();
-    read_performance();
+  int ret_value = 0;
+  if (statusfile != NULL) {
+    ret_value += read_status();
+    ret_value += read_performance();
   }
-  return 0;
+  return ret_value;
 } /* static int nagiostats_read (void) */
 
 /* Read service status */
